@@ -1,0 +1,7 @@
+{
+  "name": "WelVault",
+  "description": "Secure client file portal for freelancers and designers to manage client file uploads, storage, and project assets.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
