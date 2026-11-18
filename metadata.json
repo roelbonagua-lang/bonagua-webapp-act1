@@ -1,6 +1,6 @@
 {
-  "name": "WelVault",
-  "description": "Secure client file portal for freelancers and designers to manage client file uploads, storage, and project assets.",
+  "name": "WelHoop",
+  "description": "All-in-one Basketball Skill Development & Athlete Diet Tracker with AI coaching and SQLite persistence.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

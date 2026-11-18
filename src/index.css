@@ -2,64 +2,50 @@
 
 @layer base {
   body {
-    background-color: #07040d;
-    color: #e2e8f0;
+    background-color: #FAF8F5;
+    color: #1C1917;
     font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
   }
 
   ::selection {
-    background: #00f0ff;
-    color: #07040d;
+    background: #EA580C;
+    color: #FFFFFF;
   }
 }
 
-.font-cyber {
-  font-family: 'Rajdhani', 'Plus Jakarta Sans', sans-serif;
+.font-display {
+  font-family: 'Outfit', 'Plus Jakarta Sans', sans-serif;
 }
 
-.cyber-grid {
-  background-color: #07040d;
-  background-image: 
-    linear-gradient(to right, rgba(0, 240, 255, 0.035) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(217, 70, 239, 0.035) 1px, transparent 1px);
-  background-size: 32px 32px;
+.font-mono-tabular {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  font-variant-numeric: tabular-nums;
 }
 
-.cyber-card {
-  background: rgba(14, 9, 26, 0.82);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(0, 240, 255, 0.15);
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5), inset 0 0 12px -2px rgba(0, 240, 255, 0.04);
+.court-card {
+  background-color: #FFFFFF;
+  border: 1px solid #E7E5E4;
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(28, 25, 23, 0.04), 0 6px 16px -4px rgba(28, 25, 23, 0.04);
+  transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms cubic-bezier(0.16, 1, 0.3, 1), border-color 180ms ease;
 }
 
-.cyber-card-fuchsia {
-  background: rgba(18, 8, 30, 0.85);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(236, 72, 153, 0.2);
-  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5), inset 0 0 12px -2px rgba(236, 72, 153, 0.04);
+.court-card-interactive:hover {
+  border-color: #D6D3D1;
+  box-shadow: 0 4px 12px rgba(28, 25, 23, 0.06), 0 12px 24px -6px rgba(234, 88, 12, 0.08);
 }
 
-.cyber-glow-cyan {
-  box-shadow: 0 0 15px rgba(0, 240, 255, 0.35);
+.seam-hero-accent {
+  background-image:
+    radial-gradient(circle at 92% -10%, rgba(234, 88, 12, 0.14) 0%, transparent 48%),
+    radial-gradient(circle at 80% 110%, rgba(234, 88, 12, 0.08) 0%, transparent 45%);
 }
 
-.cyber-glow-magenta {
-  box-shadow: 0 0 15px rgba(236, 72, 153, 0.35);
-}
-
-/* Custom Cyberpunk Scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: #090514;
-}
-::-webkit-scrollbar-thumb {
-  background: #2a1645;
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #00f0ff;
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
 }

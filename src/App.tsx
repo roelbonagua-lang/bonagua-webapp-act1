@@ -3,432 +3,345 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { AuthProvider, useAuth } from './context/AuthContext';
-import { AuthPage } from './components/AuthPage';
-import { Sidebar } from './components/Sidebar';
-import { Header } from './components/Header';
-import { StorageStats } from './components/StorageStats';
-import { FileList } from './components/FileList';
-import { FileUploader } from './components/FileUploader';
-import { FilePreviewModal } from './components/FilePreviewModal';
-import { DeleteModal } from './components/DeleteModal';
-import { VaultFile, ViewMode, SortField, SortOrder, FileStatus } from './types';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-  calculateStorageMetrics,
-  filterAndSortFiles,
-} from './utils/fileUtils';
-import {
-  subscribeToVaultFiles,
-  uploadVaultFile,
-  deleteVaultFile,
-  updateVaultFileStatus,
-} from './services/fileService';
-import {
-  ShieldCheck,
-  FolderPlus,
-  Loader2,
-  CheckCircle,
   AlertCircle,
-  Sparkles,
+  CheckCircle2,
+  Loader2,
+  Menu,
+  Plus,
 } from 'lucide-react';
+import { AuthProvider, useAuth } from './context/AuthContext.tsx';
+import { AuthPage } from './components/AuthPage.tsx';
+import { Sidebar, type NavTab } from './components/Sidebar.tsx';
+import { DashboardView } from './components/DashboardView.tsx';
+import { SkillHubView } from './components/SkillHubView.tsx';
+import { NutritionView } from './components/NutritionView.tsx';
+import { AiCoachView } from './components/AiCoachView.tsx';
+import { SettingsView } from './components/SettingsView.tsx';
+import { LogDrillModal, LogMealModal } from './components/QuickLogModals.tsx';
+import { WelHoopLogo } from './components/WelHoopLogo.tsx';
+import { api } from './services/api.ts';
+import type {
+  AthleteGoal,
+  Drill,
+  MealTiming,
+  NutritionLog,
+  TrainingLog,
+  User,
+} from './types.ts';
+import { getLocalDateKey } from './utils/hoopLogic.ts';
 
-const DashboardContent: React.FC = () => {
-  const { currentUser, userProfile, isDemoUser } = useAuth();
+const WelHoopWorkspace: React.FC = () => {
+  const { user, updateProfile } = useAuth();
 
-  const [files, setFiles] = useState<VaultFile[]>([]);
-  const [loadingFiles, setLoadingFiles] = useState(true);
-  const [currentTab, setCurrentTab] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('all');
-  const [clientFilter, setClientFilter] = useState('all');
-  const [viewMode, setViewMode] = useState<ViewMode>('table');
-  const [sortBy, setSortBy] = useState<SortField>('date');
-  const [sortOrder, setSortOrder] = useState<SortOrder>('desc');
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<NavTab>('dashboard');
+  const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Modals state
-  const [isUploadOpen, setIsUploadOpen] = useState(false);
-  const [previewFile, setPreviewFile] = useState<VaultFile | null>(null);
-  const [deleteTargetFile, setDeleteTargetFile] = useState<VaultFile | null>(null);
-  const [deleting, setDeleting] = useState(false);
+  const [drills, setDrills] = useState<Drill[]>([]);
+  const [loadingDrills, setLoadingDrills] = useState(true);
+  const [trainingLogs, setTrainingLogs] = useState<TrainingLog[]>([]);
+  const [nutritionLogs, setNutritionLogs] = useState<NutritionLog[]>([]);
+  const [hydrationGlasses, setHydrationGlasses] = useState<number>(0);
+  const [loadingWorkspace, setLoadingWorkspace] = useState(true);
 
-  // Notifications
-  const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [drillModalOpen, setDrillModalOpen] = useState(false);
+  const [mealModalOpen, setMealModalOpen] = useState(false);
 
-  const showToast = (text: string, type: 'success' | 'error' = 'success') => {
-    setToastMessage({ text, type });
-    setTimeout(() => setToastMessage(null), 4000);
-  };
+  const [toast, setToast] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
-  // Subscribe to files
-  useEffect(() => {
-    if (!currentUser) return;
+  const showToast = useCallback((text: string, type: 'success' | 'error' = 'success') => {
+    setToast({ text, type });
+    window.setTimeout(() => {
+      setToast((prev) => (prev?.text === text ? null : prev));
+    }, 3600);
+  }, []);
 
-    setLoadingFiles(true);
-    const unsubscribe = subscribeToVaultFiles(
-      currentUser.uid,
-      isDemoUser,
-      (fetchedFiles) => {
-        setFiles(fetchedFiles);
-        setLoadingFiles(false);
-      },
-      (err) => {
-        console.warn('Subscription warning:', err);
-        setLoadingFiles(false);
-      }
-    );
-
-    return () => unsubscribe();
-  }, [currentUser, isDemoUser]);
-
-  // Extract unique clients
-  const availableClients = useMemo(() => {
-    const set = new Set<string>();
-    files.forEach((f) => {
-      if (f.clientName?.trim()) {
-        set.add(f.clientName.trim());
-      }
-    });
-    return Array.from(set).sort();
-  }, [files]);
-
-  // Tab-filtered files
-  const tabFilteredFiles = useMemo(() => {
-    if (currentTab === 'recent') {
-      const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-      return files.filter((f) => new Date(f.createdAt).getTime() > sevenDaysAgo);
-    }
-    if (currentTab === 'approvals') {
-      return files.filter((f) => f.status === 'in_review' || f.status === 'approved');
-    }
-    return files;
-  }, [files, currentTab]);
-
-  // Filter & sort files
-  const displayFiles = useMemo(() => {
-    return filterAndSortFiles(
-      tabFilteredFiles,
-      searchQuery,
-      selectedCategory,
-      clientFilter,
-      sortBy,
-      sortOrder
-    );
-  }, [tabFilteredFiles, searchQuery, selectedCategory, clientFilter, sortBy, sortOrder]);
-
-  // Storage metrics
-  const storageMetrics = useMemo(() => {
-    return calculateStorageMetrics(files);
-  }, [files]);
-
-  // Handlers
-  const handleUploadFile = async (
-    file: File,
-    clientName: string,
-    notes: string,
-    status: FileStatus,
-    onProgress: (percent: number) => void
-  ) => {
-    if (!currentUser) return;
+  const loadWorkspaceData = useCallback(async () => {
+    if (!user) return;
+    setLoadingWorkspace(true);
+    setLoadingDrills(true);
     try {
-      const newFile = await uploadVaultFile(
-        currentUser.uid,
-        isDemoUser,
-        file,
-        clientName,
-        notes,
-        status,
-        onProgress
+      const todayKey = getLocalDateKey();
+      const [fetchedDrills, fetchedTraining, fetchedNutrition, fetchedHydration] = await Promise.all([
+        api.getDrills(),
+        api.getTrainingLogs(),
+        api.getNutritionLogs(),
+        api.getHydration(todayKey),
+      ]);
+      setDrills(fetchedDrills);
+      setTrainingLogs(fetchedTraining);
+      setNutritionLogs(fetchedNutrition);
+      setHydrationGlasses(fetchedHydration.glasses_count);
+    } catch (err: unknown) {
+      showToast(
+        err instanceof Error ? err.message : 'Failed to load athlete data.',
+        'error'
       );
-      if (isDemoUser) {
-        setFiles((prev) => [newFile, ...prev.filter((f) => f.id !== newFile.id)]);
-      }
-      showToast(`Uploaded "${file.name}" to vault.`);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Upload failed';
-      showToast(msg, 'error');
-      throw err;
-    }
-  };
-
-  const handleDeleteFile = async () => {
-    if (!deleteTargetFile || !currentUser) return;
-    setDeleting(true);
-    try {
-      await deleteVaultFile(currentUser.uid, isDemoUser, deleteTargetFile.id);
-      if (isDemoUser) {
-        setFiles((prev) => prev.filter((f) => f.id !== deleteTargetFile.id));
-      }
-      showToast(`Purged "${deleteTargetFile.name}" from vault.`);
-      setDeleteTargetFile(null);
-      if (previewFile?.id === deleteTargetFile.id) {
-        setPreviewFile(null);
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Delete failed';
-      showToast(msg, 'error');
     } finally {
-      setDeleting(false);
+      setLoadingDrills(false);
+      setLoadingWorkspace(false);
     }
-  };
+  }, [user, showToast]);
 
-  const handleStatusChange = async (fileId: string, newStatus: FileStatus) => {
-    if (!currentUser) return;
+  useEffect(() => {
+    loadWorkspaceData();
+  }, [loadWorkspaceData]);
+
+  if (!user) return null;
+
+  const handleUpdateHydration = async (glasses: number) => {
+    const clamped = Math.max(0, Math.min(8, glasses));
+    const prev = hydrationGlasses;
+    setHydrationGlasses(clamped);
     try {
-      await updateVaultFileStatus(currentUser.uid, isDemoUser, fileId, newStatus);
-      if (isDemoUser) {
-        setFiles((prev) =>
-          prev.map((f) => (f.id === fileId ? { ...f, status: newStatus } : f))
-        );
-      }
-      if (previewFile && previewFile.id === fileId) {
-        setPreviewFile({ ...previewFile, status: newStatus });
-      }
-      showToast(`Status updated to ${newStatus.replace('_', ' ')}.`);
+      const todayKey = getLocalDateKey();
+      const updated = await api.setHydration(clamped, todayKey);
+      setHydrationGlasses(updated.glasses_count);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Status update failed';
-      showToast(msg, 'error');
+      setHydrationGlasses(prev);
+      showToast(err instanceof Error ? err.message : 'Could not update hydration.', 'error');
     }
   };
 
-  const handleDownloadFile = (file: VaultFile) => {
+  const handleLogDrill = async (payload: {
+    drill_id?: number | null;
+    drill_title: string;
+    category: string;
+    duration_mins: number;
+    notes: string;
+  }) => {
+    const created = await api.createTrainingLog(payload);
+    setTrainingLogs((prev) => [created, ...prev]);
+    showToast(`Logged "${created.drill_title}" (${created.duration_mins} mins).`);
+  };
+
+  const handleCompleteDrill = async (drill: Drill) => {
     try {
-      if (file.dataUrl && file.dataUrl.startsWith('data:')) {
-        const link = document.createElement('a');
-        link.href = file.dataUrl;
-        link.download = file.name;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        showToast(`Downloading "${file.name}"...`);
-      } else {
-        const blob = new Blob(
-          [`WelVault Cyberpunk Asset Delivery Node\nFile: ${file.name}\nSize: ${file.sizeFormatted}\nClient: ${file.clientName}\nStatus: ${file.status}\nUploaded: ${file.createdAt}\nNotes: ${file.notes || 'None'}\n`],
-          { type: 'text/plain;charset=utf-8' }
-        );
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = file.name.endsWith('.txt') ? file.name : `${file.name}.txt`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-        showToast(`Downloaded security certificate for "${file.name}".`);
-      }
-    } catch (err) {
-      showToast('Could not initiate file download.', 'error');
+      const created = await api.createTrainingLog({
+        drill_id: drill.id,
+        drill_title: drill.title,
+        category: drill.category,
+        duration_mins: drill.duration_mins,
+        notes: `Completed ${drill.sets_reps}`,
+      });
+      setTrainingLogs((prev) => [created, ...prev]);
+      showToast(`Logged "${drill.title}" (+${drill.duration_mins} mins).`);
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Could not log drill.', 'error');
+    }
+  };
+
+  const handleDeleteTrainingLog = async (id: number) => {
+    try {
+      await api.deleteTrainingLog(id);
+      setTrainingLogs((prev) => prev.filter((item) => item.id !== id));
+      showToast('Workout log removed.');
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Failed to remove workout log.', 'error');
+    }
+  };
+
+  const handleAddMeal = async (payload: {
+    meal_timing: MealTiming;
+    food_name: string;
+    calories: number;
+    protein_g: number;
+    carbs_g: number;
+  }) => {
+    const created = await api.createNutritionLog(payload);
+    setNutritionLogs((prev) => [created, ...prev]);
+    showToast(`Logged "${created.food_name}" (${created.calories} kcal).`);
+  };
+
+  const handleDeleteNutritionLog = async (id: number) => {
+    try {
+      await api.deleteNutritionLog(id);
+      setNutritionLogs((prev) => prev.filter((item) => item.id !== id));
+      showToast('Meal entry removed.');
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Failed to remove meal entry.', 'error');
+    }
+  };
+
+  const handleUpdateMacroProfile = async (payload: { weight_kg: number; goal: AthleteGoal }) => {
+    try {
+      await updateProfile(payload);
+      showToast('Daily calorie and protein targets recalculated.');
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Failed to update targets.', 'error');
+    }
+  };
+
+  const handleSaveProfile = async (payload: Partial<User>) => {
+    try {
+      await updateProfile(payload);
+      showToast('Athlete profile & daily targets saved.');
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : 'Failed to save profile.', 'error');
     }
   };
 
   return (
-    <div className="min-h-screen cyber-grid text-slate-200 flex">
-      {/* Cyberpunk & Vaporwave Sidebar */}
+    <div className="min-h-screen bg-[#FAF8F5] text-[#1C1917] flex">
       <Sidebar
-        currentTab={currentTab}
-        onTabChange={(tab) => {
-          setCurrentTab(tab);
-          if (tab === 'clients') {
-            if (availableClients.length > 0 && clientFilter === 'all') {
-              setClientFilter(availableClients[0]);
-            }
-          } else {
-            setClientFilter('all');
-          }
-        }}
-        metrics={storageMetrics}
-        mobileOpen={mobileSidebarOpen}
-        onCloseMobile={() => setMobileSidebarOpen(false)}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        mobileOpen={mobileOpen}
+        onCloseMobile={() => setMobileOpen(false)}
       />
 
-      {/* Main Workspace */}
-      <div className="flex-1 lg:pl-72 flex flex-col min-w-0 min-h-screen">
-        {/* Top Header */}
-        <Header
-          onOpenMobileMenu={() => setMobileSidebarOpen(true)}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          selectedCategory={selectedCategory}
-          onCategoryChange={setSelectedCategory}
-          clientFilter={clientFilter}
-          onClientFilterChange={setClientFilter}
-          availableClients={availableClients}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          sortBy={sortBy}
-          sortOrder={sortOrder}
-          onSortChange={(f, o) => {
-            setSortBy(f);
-            setSortOrder(o);
-          }}
-          onOpenUpload={() => setIsUploadOpen(true)}
-        />
-
-        {/* Content Viewport */}
-        <main className="flex-1 p-4 sm:p-8 max-w-7xl w-full mx-auto">
-          {/* Toast alert */}
-          {toastMessage && (
-            <div
-              className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl shadow-xl border flex items-center gap-2.5 text-xs font-mono font-bold animate-fade-in ${
-                toastMessage.type === 'success'
-                  ? 'bg-[#0f071f] text-cyan-300 border-cyan-400 shadow-cyan-500/20'
-                  : 'bg-rose-950 text-rose-300 border-rose-500 shadow-rose-500/20'
-              }`}
+      <div className="flex-1 lg:pl-68 flex flex-col min-w-0 min-h-screen">
+        {/* Top Mobile & Quick-Action Bar */}
+        <header className="sticky top-0 z-30 h-16 bg-white/95 backdrop-blur-xs border-b border-[#E7E5E4] px-4 sm:px-6 flex items-center justify-between gap-3 lg:hidden">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setMobileOpen(true)}
+              className="p-2 rounded-xl border border-[#E7E5E4] text-[#44403C] hover:bg-[#FAF8F5]"
+              aria-label="Open navigation menu"
             >
-              {toastMessage.type === 'success' ? (
-                <CheckCircle className="w-4 h-4 text-cyan-400" />
-              ) : (
-                <AlertCircle className="w-4 h-4 text-rose-400" />
-              )}
-              <span>{toastMessage.text}</span>
-            </div>
-          )}
+              <Menu className="w-5 h-5" />
+            </button>
+            <WelHoopLogo size="sm" />
+          </div>
 
-          {/* Page Greeting & Quick Action Banner */}
-          <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4 cyber-card p-5 sm:p-6 rounded-2xl border border-fuchsia-900/40 shadow-xl">
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <h1 className="font-cyber text-2xl sm:text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-fuchsia-300 to-pink-400 tracking-wider uppercase">
-                  {currentTab === 'recent'
-                    ? 'Recent Deliverables'
-                    : currentTab === 'clients'
-                    ? `Client Sectors: ${clientFilter === 'all' ? 'All Clients' : clientFilter}`
-                    : currentTab === 'approvals'
-                    ? 'Client Approvals & Reviews'
-                    : 'Client Portal Vault'}
-                </h1>
-                {currentTab !== 'all' && (
-                  <button
-                    onClick={() => {
-                      setCurrentTab('all');
-                      setClientFilter('all');
-                    }}
-                    className="text-xs text-cyan-400 hover:text-cyan-300 font-mono font-bold underline underline-offset-2 ml-2"
-                  >
-                    View All
-                  </button>
-                )}
-              </div>
-              <p className="text-xs sm:text-sm text-slate-400 font-mono">
-                Welcome, <span className="text-cyan-300 font-semibold">{userProfile?.displayName || 'User'}</span>. Deliver design assets, feedback telemetry, and invoices through encrypted channels.
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setDrillModalOpen(true)}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#EA580C] hover:bg-[#C2410C] text-white text-xs font-semibold whitespace-nowrap"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Drill</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMealModalOpen(true)}
+              className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#1C1917] hover:bg-[#292524] text-white text-xs font-semibold whitespace-nowrap"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Meal</span>
+            </button>
+          </div>
+        </header>
+
+        {/* Main Content Viewport */}
+        <main className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto">
+          {loadingWorkspace ? (
+            <div className="court-card p-16 text-center">
+              <Loader2 className="w-8 h-8 animate-spin text-[#EA580C] mx-auto mb-3" />
+              <p className="text-sm font-medium text-[#57534E]">
+                Loading athlete metrics and court logs...
               </p>
             </div>
-
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setIsUploadOpen(true)}
-                className="flex items-center gap-2 px-4.5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-400 via-fuchsia-500 to-pink-500 hover:from-cyan-300 hover:to-pink-400 text-slate-950 font-cyber text-base font-bold uppercase tracking-wider shadow-lg shadow-cyan-500/25 border border-cyan-300/40 transition-transform active:scale-95"
-              >
-                <FolderPlus className="w-4 h-4 stroke-[2.5]" />
-                <span>Upload Payload</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Storage stats overview */}
-          <StorageStats
-            metrics={storageMetrics}
-            files={files}
-            onFilterStatus={(s) => {
-              setCurrentTab('approvals');
-            }}
-          />
-
-          {/* Files section */}
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-cyber text-base font-bold text-slate-200 uppercase tracking-widest flex items-center gap-2">
-              <span className="text-cyan-400">Vault Payloads</span>
-              <span className="text-xs font-mono font-semibold text-fuchsia-400">
-                ({displayFiles.length} of {files.length})
-              </span>
-            </h2>
-
-            {searchQuery && (
-              <span className="text-xs text-slate-400 font-mono">
-                Telemetry search: <strong className="text-cyan-300">"{searchQuery}"</strong>
-              </span>
-            )}
-          </div>
-
-          {loadingFiles ? (
-            <div className="p-16 text-center cyber-card rounded-2xl border border-fuchsia-900/40">
-              <Loader2 className="w-8 h-8 animate-spin text-cyan-400 mx-auto mb-3" />
-              <p className="text-sm text-slate-300 font-mono">Decrypting file telemetry...</p>
-            </div>
           ) : (
-            <FileList
-              files={displayFiles}
-              viewMode={viewMode}
-              onPreview={(f) => setPreviewFile(f)}
-              onDownload={handleDownloadFile}
-              onDelete={(f) => setDeleteTargetFile(f)}
-              onOpenUpload={() => setIsUploadOpen(true)}
-            />
+            <>
+              {activeTab === 'dashboard' && (
+                <DashboardView
+                  user={user}
+                  trainingLogs={trainingLogs}
+                  nutritionLogs={nutritionLogs}
+                  hydrationGlasses={hydrationGlasses}
+                  onUpdateHydration={handleUpdateHydration}
+                  onOpenLogDrill={() => setDrillModalOpen(true)}
+                  onOpenLogMeal={() => setMealModalOpen(true)}
+                  onDeleteTrainingLog={handleDeleteTrainingLog}
+                  onDeleteNutritionLog={handleDeleteNutritionLog}
+                  onNavigateTab={(tab) => setActiveTab(tab)}
+                />
+              )}
+
+              {activeTab === 'skills' && (
+                <SkillHubView
+                  drills={drills}
+                  loading={loadingDrills}
+                  onCompleteDrill={handleCompleteDrill}
+                />
+              )}
+
+              {activeTab === 'nutrition' && (
+                <NutritionView
+                  user={user}
+                  nutritionLogs={nutritionLogs}
+                  onUpdateMacroProfile={handleUpdateMacroProfile}
+                  onAddMeal={handleAddMeal}
+                  onDeleteMeal={handleDeleteNutritionLog}
+                />
+              )}
+
+              {activeTab === 'coach' && <AiCoachView />}
+
+              {activeTab === 'settings' && (
+                <SettingsView user={user} onSaveProfile={handleSaveProfile} />
+              )}
+            </>
           )}
         </main>
       </div>
 
-      {/* Upload Modal */}
-      <FileUploader
-        isOpen={isUploadOpen}
-        onClose={() => setIsUploadOpen(false)}
-        existingClients={availableClients}
-        onUpload={handleUploadFile}
+      {/* Quick-Log Modals */}
+      <LogDrillModal
+        isOpen={drillModalOpen}
+        onClose={() => setDrillModalOpen(false)}
+        drills={drills}
+        onSubmit={handleLogDrill}
       />
 
-      {/* File Preview & Details Modal */}
-      <FilePreviewModal
-        file={previewFile}
-        isOpen={Boolean(previewFile)}
-        onClose={() => setPreviewFile(null)}
-        onDownload={handleDownloadFile}
-        onDelete={(f) => setDeleteTargetFile(f)}
-        onStatusChange={handleStatusChange}
+      <LogMealModal
+        isOpen={mealModalOpen}
+        onClose={() => setMealModalOpen(false)}
+        onSubmit={handleAddMeal}
       />
 
-      {/* Delete Confirmation Modal */}
-      <DeleteModal
-        file={deleteTargetFile}
-        isOpen={Boolean(deleteTargetFile)}
-        onClose={() => setDeleteTargetFile(null)}
-        onConfirm={handleDeleteFile}
-        deleting={deleting}
-      />
+      {/* Toast Notification */}
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`fixed bottom-5 right-5 z-50 px-4 py-3 rounded-xl shadow-lg border flex items-center gap-2.5 text-xs font-semibold ${
+            toast.type === 'success'
+              ? 'bg-[#1C1917] text-white border-[#292524]'
+              : 'bg-[#FEF2F2] text-[#B91C1C] border-[#FECACA]'
+          }`}
+        >
+          {toast.type === 'success' ? (
+            <CheckCircle2 className="w-4 h-4 text-[#EA580C] shrink-0" />
+          ) : (
+            <AlertCircle className="w-4 h-4 text-[#B91C1C] shrink-0" />
+          )}
+          <span>{toast.text}</span>
+        </div>
+      )}
     </div>
   );
 };
 
 const RootApp: React.FC = () => {
-  const { currentUser, loading, signInWithDemo } = useAuth();
+  const { user, loading, loginDemo } = useAuth();
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('autostart') === '1' && !currentUser && !loading) {
-      signInWithDemo('freelancer');
+    if (params.get('autostart') === '1' && !user && !loading) {
+      loginDemo().catch(() => {
+        // user stays on AuthPage if demo login fails
+      });
     }
-  }, [currentUser, loading, signInWithDemo]);
+  }, [user, loading, loginDemo]);
 
   if (loading) {
     return (
-      <div className="min-h-screen cyber-grid bg-[#07040d] flex flex-col items-center justify-center text-white">
-        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-400 via-fuchsia-500 to-pink-500 p-0.5 shadow-2xl shadow-cyan-500/30 mb-4 animate-pulse">
-          <div className="w-full h-full bg-[#090414] rounded-[14px] flex items-center justify-center text-cyan-300">
-            <ShieldCheck className="w-9 h-9 text-cyan-400 drop-shadow-[0_0_10px_rgba(0,240,255,0.7)]" />
-          </div>
-        </div>
-        <h2 className="font-cyber text-2xl font-bold tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-fuchsia-300 to-pink-400 uppercase">
-          WelVault
-        </h2>
-        <p className="text-xs text-fuchsia-300 mt-1 font-mono flex items-center gap-2">
-          <Loader2 className="w-3.5 h-3.5 animate-spin text-cyan-400" />
-          Connecting to encrypted node...
+      <div className="min-h-screen bg-[#FAF8F5] flex flex-col items-center justify-center p-6">
+        <WelHoopLogo size="lg" />
+        <p className="mt-4 text-xs font-medium text-[#57534E] flex items-center gap-2">
+          <Loader2 className="w-4 h-4 animate-spin text-[#EA580C]" />
+          Loading WelHoop athlete hub...
         </p>
       </div>
     );
   }
 
-  return currentUser ? <DashboardContent /> : <AuthPage />;
+  return user ? <WelHoopWorkspace /> : <AuthPage />;
 };
 
 export default function App() {
